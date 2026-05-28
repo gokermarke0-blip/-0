@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>مرفع مشاريع البرمجة - GitHub</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #0d1117;
+      color: #c9d1d9;
+      text-align: center;
+      padding: 40px;
+    }
+    .container {
+      max-width: 700px;
+      margin: auto;
+      background: #161b22;
+      padding: 40px;
+      border-radius: 12px;
+      border: 1px solid #30363d;
+    }
+    input, button {
+      padding: 12px;
+      margin: 10px;
+      border-radius: 8px;
+    }
+    button {
+      background: #238636;
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    button:hover { background: #2ea44f; }
+    #result { margin-top: 20px; text-align: right; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🚀 مرفع مشاريع البرمجة</h1>
+    <p>ارفع مشروعك (ZIP أو HTML) → يتحول لـ Repo على GitHub</p>
+
+    <input type="text" id="repoName" placeholder="اسم الريبو (مثال: my-awesome-project)" style="width:70%">
+    <br>
+    <input type="file" id="projectFile" accept=".zip,.html">
+    <br><br>
+    <button onclick="uploadProject()">رفع المشروع إلى GitHub</button>
+
+    <div id="result"></div>
+  </div>
+
+  <script>
+    const GITHUB_TOKEN = "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"; // ← حط توكنك هنا
+
+    async function uploadProject() {
+      const repoName = document.getElementById('repoName').value.trim();
+      const fileInput = document.getElementById('projectFile');
+      const resultDiv = document.getElementById('result');
+
+      if (!repoName) {
+        resultDiv.innerHTML = `<p style="color:red;">❌ لازم تكتب اسم الريبو</p>`;
+        return;
+      }
+      if (!fileInput.files[0]) {
+        resultDiv.innerHTML = `<p style="color:red;">❌ اختر ملف ZIP أو HTML</p>`;
+        return;
+      }
+      if (!GITHUB_TOKEN.includes("ghp_")) {
+        resultDiv.innerHTML = `<p style="color:red;">❌ حط GitHub Personal Access Token أولاً</p>`;
+        return;
+      }
+
+      resultDiv.innerHTML = `<p>جاري إنشاء الريبو...</p>`;
+
+      try {
+        const username = await getGitHubUsername();
+        const file = fileInput.files[0];
+
+        // 1. إنشاء Repository جديد
+        const repoRes = await fetch('https://api.github.com/user/repos', {
+          method: 'POST',
+          headers: {
+            'Authorization': `token ${GITHUB_TOKEN}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            name: repoName,
+            description: "مشروع برمجة مرفوع تلقائياً",
+            private: false,
+            auto_init: true
+          })
+        });
+
+        if (!repoRes.ok) throw new Error("فشل في إنشاء الريبو");
+
+        resultDiv.innerHTML = `<p>✅ تم إنشاء الريبو، جاري رفع الملفات...</p>`;
+
+        let files = [];
+
+        if (file.name.endsWith('.zip')) {
+          const zip = await JSZip.loadAsync(file);
+          for (let filename in zip.files) {
+            if (!zip.files[filename].dir) {
+              const content = await zip.files[filename].async('base64');
+              files.push({ path: filename, content });
+            }
+          }
+        } else {
+          const content = await fileToBase64(file);
+          files.push({ path: file.name, content });
+        }
+
+        // رفع الملفات واحد واحد (يمكن تحسينه)
+        for (let file of files) {
+          await fetch(`https://api.github.com/repos/${username}/${repoName}/contents/${file.path}`, {
+            method: 'PUT',
+            headers: {
+              'Authorization': `token ${GITHUB_TOKEN}`,
+              'Accept': 'application/vnd.github.v3+json',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              message: "Upload project files",
+              content: file.content
+            })
+          });
+        }
+
+        resultDiv.innerHTML = `
+          <p style="color:lime;">✅ تم رفع المشروع بنجاح!</p>
+          <p><strong>رابط الريبو:</strong></p>
+          <a href="https://github.com/${username}/${repoName}" target="_blank">
+            https://github.com/${username}/${repoName}
+          </a>
+          <br><br>
+          <a href="https://${username}.github.io/${repoName}" target="_blank" style="color:#58a6ff;">
+            🌐 افتح الموقع (GitHub Pages)
+          </a>
+        `;
+
+      } catch (err) {
+        resultDiv.innerHTML = `<p style="color:red;">❌ خطأ: ${err.message}</p>`;
+        console.error(err);
+      }
+    }
+
+    async function getGitHubUsername() {
+      const res = await fetch('https://api.github.com/user', {
+        headers: { 'Authorization': `token ${GITHUB_TOKEN}` }
+      });
+      const data = await res.json();
+      return data.login;
+    }
+
+    function fileToBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+  </script>
+</body>
+</html>
